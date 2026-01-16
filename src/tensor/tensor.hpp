@@ -14,8 +14,11 @@ struct TensorMeta {
 
 class Tensor {
 private:
+    // Metadata of the tensor
     TensorMeta _meta;
+    // Underlying storage of the tensor
     core::storage_t _storage;
+    // Offset in bytes within the storage
     size_t _offset;
     Tensor(TensorMeta meta, core::storage_t storage, size_t offset = 0);
 

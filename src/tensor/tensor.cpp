@@ -16,6 +16,7 @@ tensor_t Tensor::create(const std::vector<size_t> &shape,
                         llaisysDeviceType_t device_type,
                         int device) {
     size_t ndim_ = shape.size();
+    // Calculate strides
     std::vector<ptrdiff_t> strides(ndim_);
     size_t stride = 1;
     for (size_t i = 1; i <= ndim_; i++) {
@@ -26,6 +27,7 @@ tensor_t Tensor::create(const std::vector<size_t> &shape,
     size_t total_elems = stride;
     size_t dtype_size = utils::dsize(dtype);
 
+    // Allocate storage
     if (device_type == LLAISYS_DEVICE_CPU && core::context().runtime().deviceType() != LLAISYS_DEVICE_CPU) {
         auto storage = core::context().runtime().allocateHostStorage(total_elems * dtype_size);
         return std::shared_ptr<Tensor>(new Tensor(meta, storage));
@@ -37,6 +39,7 @@ tensor_t Tensor::create(const std::vector<size_t> &shape,
 }
 
 std::byte *Tensor::data() {
+    // Return pointer to the data considering the offset
     return _storage->memory() + _offset;
 }
 
@@ -45,34 +48,42 @@ const std::byte *Tensor::data() const {
 }
 
 size_t Tensor::ndim() const {
+    // Return number of dimensions
     return _meta.shape.size();
 }
 
 const std::vector<size_t> &Tensor::shape() const {
+    // Return shape of the tensor
     return _meta.shape;
 }
 
 const std::vector<ptrdiff_t> &Tensor::strides() const {
+    // Return strides of the tensor
     return _meta.strides;
 }
 
 llaisysDataType_t Tensor::dtype() const {
+    // Return data type of the tensor
     return _meta.dtype;
 }
 
 llaisysDeviceType_t Tensor::deviceType() const {
+    // Return device type of the tensor
     return _storage->deviceType();
 }
 
 int Tensor::deviceId() const {
+    // Return device ID of the tensor
     return _storage->deviceId();
 }
 
 size_t Tensor::numel() const {
+    // Return number of elements in the tensor
     return std::accumulate(_meta.shape.begin(), _meta.shape.end(), size_t(1), std::multiplies<size_t>());
 }
 
 size_t Tensor::elementSize() const {
+    // Return size of each element in bytes
     return utils::dsize(_meta.dtype);
 }
 

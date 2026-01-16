@@ -164,27 +164,120 @@ void Tensor::debug() const {
 }
 
 bool Tensor::isContiguous() const {
-    TO_BE_IMPLEMENTED();
+    size_t ndim = this->ndim();
+    if (ndim == 0) {
+        return true;  // Scalar tensor is always contiguous
+    }
+
+    const auto &shape = this->shape();
+    const auto &strides = this->strides();
+
+    // Check if stride[ndim-1] == 1 (last dimension stride must be 1)
+    if (strides[ndim - 1] != 1) {
+        return false;
+    }
+
+    // Check if strides[i] == strides[i+1] * shape[i+1] for all i < ndim-1
+    for (size_t i = 0; i < ndim - 1; i++) {
+        auto tmp = static_cast<ptrdiff_t>(strides[i + 1] * shape[i + 1]);
+        if (strides[i] != tmp) {
+            return false;
+        }
+    }
+
     return true;
 }
 
 tensor_t Tensor::permute(const std::vector<size_t> &order) const {
-    TO_BE_IMPLEMENTED();
-    return std::shared_ptr<Tensor>(new Tensor(_meta, _storage));
+    
+    if (order.size() != this->ndim()) {
+        return nullptr; // TODO: throw exception
+    }
+
+    TensorMeta new_meta;
+    new_meta.dtype = this->dtype();
+    new_meta.shape.resize(this->ndim());
+    new_meta.strides.resize(this->ndim());
+
+    for (size_t i = 0; i < this->ndim(); i++) {
+        new_meta.shape[i] = this->shape()[order[i]];
+        new_meta.strides[i] = this->strides()[order[i]];
+    }
+
+    return std::shared_ptr<Tensor>(new Tensor(new_meta, _storage));
 }
 
 tensor_t Tensor::view(const std::vector<size_t> &shape) const {
-    TO_BE_IMPLEMENTED();
-    return std::shared_ptr<Tensor>(new Tensor(_meta, _storage));
+    auto total_elems = this->numel();
+    size_t new_total_elems = 1;;
+    for (auto s : shape) {
+        new_total_elems *= s;
+    }
+    if (total_elems != new_total_elems) {
+        return nullptr; // TODO: throw exception
+    }
+
+    if (!this->isContiguous()) {
+        return nullptr; // TODO: throw exception
+    }
+
+    TensorMeta new_meta;
+    new_meta.dtype = this->dtype();
+    new_meta.shape = shape;
+    // Calculate new strides
+    size_t ndim_ = shape.size();
+    new_meta.strides.resize(ndim_);
+    size_t stride = 1;
+    for (size_t i = 1; i <= ndim_; i++) {
+        new_meta.strides[ndim_ - i] = stride;
+        stride *= shape[ndim_ - i];
+    }
+
+    return std::shared_ptr<Tensor>(new Tensor(new_meta, _storage));
 }
 
 tensor_t Tensor::slice(size_t dim, size_t start, size_t end) const {
-    TO_BE_IMPLEMENTED();
-    return std::shared_ptr<Tensor>(new Tensor(_meta, _storage));
+    // Create a new tensor which slices the original tensor along the given dimension.
+    // No data transfer, only update the offset to point to the sliced region.
+
+    if (dim >= this->ndim()) {
+        return nullptr; // TODO: throw exception
+    }
+    if (start >= end || end > this->shape()[dim]) {
+        return nullptr; // TODO: throw exception
+    }
+
+    TensorMeta new_meta;
+    new_meta.dtype = this->dtype();
+    new_meta.shape = this->shape();
+    new_meta.strides = this->strides();  // Strides remain unchanged
+    new_meta.shape[dim] = end - start;   // Update the size of sliced dimension
+    
+    // Calculate the new offset based on the start index in the sliced dimension
+    // Note: _offset is in bytes, so we need to multiply strides by element size
+    size_t new_offset = this->_offset + start * this->strides()[dim] * this->elementSize();
+    
+    return std::shared_ptr<Tensor>(new Tensor(new_meta, _storage, new_offset));
 }
 
-void Tensor::load(const void *src_) {
-    TO_BE_IMPLEMENTED();
+void Tensor::load(const void *src) {
+    size_t total_bytes = this->numel() * this->elementSize();
+    
+    if (this->deviceType() == LLAISYS_DEVICE_CPU) {
+        // Copy from host to host
+        core::context().runtime().api()->memcpy_sync(
+            this->data(),
+            src,
+            total_bytes,
+            LLAISYS_MEMCPY_H2H);
+    } else {
+        // Copy from host to device (e.g., GPU)
+        core::context().runtime().api()->memcpy_sync(
+            this->data(),
+            src,
+            total_bytes,
+            LLAISYS_MEMCPY_H2D);
+    }
 }
 
 tensor_t Tensor::contiguous() const {

@@ -1,4 +1,5 @@
 from typing import Sequence, Tuple
+import numpy as np
 
 from .libllaisys import (
     LIB_LLAISYS,
@@ -32,6 +33,40 @@ class Tensor:
                 llaisysDeviceType_t(device),
                 c_int(device_id),
             )
+
+    @staticmethod
+    def from_numpy(array: np.ndarray) -> 'Tensor':
+        """Create a Tensor from a numpy array."""
+        # Convert numpy dtype to llaisys DataType
+        # Note: array.dtype is a numpy dtype object, not the type itself
+        # We need to use array.dtype.type to get the actual type
+        dtype_map = {
+            np.float32: DataType.F32,
+            np.float16: DataType.F16,
+            np.float64: DataType.F64,
+            np.int32: DataType.I32,
+            np.int64: DataType.I64,
+            np.uint8: DataType.U8,
+            np.uint32: DataType.U32,
+        }
+        
+        np_dtype = array.dtype.type  # Use .type to get the actual type
+        if np_dtype not in dtype_map:
+            raise ValueError(f"Unsupported numpy dtype: {array.dtype}")
+        
+        llaisys_dtype = dtype_map[np_dtype]
+        
+        # Ensure array is contiguous
+        if not array.flags['C_CONTIGUOUS']:
+            array = np.ascontiguousarray(array)
+        
+        # Create tensor with the same shape
+        tensor = Tensor(shape=array.shape, dtype=llaisys_dtype, device=DeviceType.CPU)
+        
+        # Load data from numpy array
+        tensor.load(array.ctypes.data_as(c_void_p))
+        
+        return tensor
 
     def __del__(self):
         if hasattr(self, "_tensor") and self._tensor is not None:
@@ -70,7 +105,11 @@ class Tensor:
         LIB_LLAISYS.tensorDebug(self._tensor)
 
     def __repr__(self):
-        return f"<Tensor shape={self.shape}, dtype={self.dtype}, device={self.device_type}:{self.device_id}>"
+        shape = self.shape()
+        dtype = self.dtype()
+        device = self.device_type()
+        device_id = self.device_id()
+        return f"<Tensor shape={shape}, dtype={dtype}, device={device}:{device_id}>"
 
     def load(self, data: c_void_p):
         LIB_LLAISYS.tensorLoad(self._tensor, data)

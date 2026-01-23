@@ -35,8 +35,28 @@ __C {
 
     __export void llaisysQwen2ModelDestroy(struct LlaisysQwen2Model * model);
 
-    __export struct LlaisysQwen2Weights *llaisysQwen2ModelWeights(struct LlaisysQwen2Model * model);
+    __export void llaisysQwen2InitWeightArrays(struct LlaisysQwen2Model * model);
 
     __export int64_t llaisysQwen2ModelInfer(struct LlaisysQwen2Model * model, int64_t * token_ids, size_t ntoken);
+
+    __export void llaisysQwen2ModelResetCache(struct LlaisysQwen2Model * model);
+
+    // Weight setters - now take model pointer directly
+    __export void llaisysQwen2SetEmbedTokensWeight(struct LlaisysQwen2Model *model, llaisysTensor_t tensor);
+    __export void llaisysQwen2SetOutEmbedWeight(struct LlaisysQwen2Model *model, llaisysTensor_t tensor);
+    __export void llaisysQwen2SetOutNormWeight(struct LlaisysQwen2Model *model, llaisysTensor_t tensor);
+    __export void llaisysQwen2SetAttnNormWeight(struct LlaisysQwen2Model *model, size_t layer_idx, llaisysTensor_t tensor);
+    __export void llaisysQwen2SetAttnQWeight(struct LlaisysQwen2Model *model, size_t layer_idx, llaisysTensor_t tensor);
+    __export void llaisysQwen2SetAttnQBias(struct LlaisysQwen2Model *model, size_t layer_idx, llaisysTensor_t tensor);
+    __export void llaisysQwen2SetAttnKWeight(struct LlaisysQwen2Model *model, size_t layer_idx, llaisysTensor_t tensor);
+    __export void llaisysQwen2SetAttnKBias(struct LlaisysQwen2Model *model, size_t layer_idx, llaisysTensor_t tensor);
+    __export void llaisysQwen2SetAttnVWeight(struct LlaisysQwen2Model *model, size_t layer_idx, llaisysTensor_t tensor);
+    __export void llaisysQwen2SetAttnVBias(struct LlaisysQwen2Model *model, size_t layer_idx, llaisysTensor_t tensor);
+    __export void llaisysQwen2SetAttnOWeight(struct LlaisysQwen2Model *model, size_t layer_idx, llaisysTensor_t tensor);
+    __export void llaisysQwen2SetMlpNormWeight(struct LlaisysQwen2Model *model, size_t layer_idx, llaisysTensor_t tensor);
+    __export void llaisysQwen2SetMlpGateWeight(struct LlaisysQwen2Model *model, size_t layer_idx, llaisysTensor_t tensor);
+    __export void llaisysQwen2SetMlpUpWeight(struct LlaisysQwen2Model *model, size_t layer_idx, llaisysTensor_t tensor);
+    __export void llaisysQwen2SetMlpDownWeight(struct LlaisysQwen2Model *model, size_t layer_idx, llaisysTensor_t tensor);
+
 }
 #endif // LLAISYS_MODELS_QWEN2_H

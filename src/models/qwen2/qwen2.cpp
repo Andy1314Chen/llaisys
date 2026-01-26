@@ -33,7 +33,7 @@ Qwen2Model::Qwen2Model(const Qwen2Meta &meta_param, llaisysDeviceType_t dt, int 
     try {
         k_cache = new tensor_t[meta.nlayer];
         v_cache = new tensor_t[meta.nlayer];
-    } catch (const std::bad_alloc& e) {
+    } catch (const std::bad_alloc&) {
         throw;
     }
 
@@ -64,7 +64,7 @@ Qwen2Model::Qwen2Model(const Qwen2Meta &meta_param, llaisysDeviceType_t dt, int 
             // Initialize VV cache to zero
             size_t v_cache_size = meta.maxseq * meta.nkvh * meta.dh * llaisys::utils::dsize(meta.dtype);
             std::memset(v_cache[i]->data(), 0, v_cache_size);
-        } catch (const std::exception& e) {
+        } catch (const std::exception&) {
             throw;
         }
     }
@@ -75,7 +75,7 @@ Qwen2Model::Qwen2Model(const Qwen2Meta &meta_param, llaisysDeviceType_t dt, int 
         if (!hidden) {
             throw std::runtime_error("Failed to create hidden tensor");
         }
-    } catch (const std::exception& e) {
+    } catch (const std::exception&) {
         throw;
     }
 
@@ -85,7 +85,7 @@ Qwen2Model::Qwen2Model(const Qwen2Meta &meta_param, llaisysDeviceType_t dt, int 
         if (!logits) {
             throw std::runtime_error("Failed to create logits tensor");
         }
-    } catch (const std::exception& e) {
+    } catch (const std::exception&) {
         throw;
     }
 }

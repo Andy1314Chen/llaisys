@@ -43,14 +43,12 @@ class Qwen2:
                             self.weights_data[name] = numpy_tensor
                 else:
                     raise
-        print(f"Loaded {len(self.weights_data)} weights from safetensors.")
+        # Model weights loaded from safetensors
 
         # Parse model config
-        print("Parse model config...")
         self._parse_config(model_path)
         
         # Create model
-        print("Create model...")
         self._create_model()
 
     def _parse_config(self, model_path):
@@ -102,27 +100,18 @@ class Qwen2:
 
         # Load weights into the C++ model
         self._load_weights_to_cpp()
-        
-        print(f"[Python] self._model value: {self._model}")
-        print(f"[Python] self._model type: {type(self._model)}")
+
 
     def _load_weights_to_cpp(self):
         """Load weights from safetensors into C++ model"""
         from ..tensor import Tensor
         import ctypes
 
-        print("[Python] _load_weights_to_cpp started")
         # Initialize weight arrays in C++
-        print("[Python] Calling llaisysQwen2InitWeightArrays...")
         LIB_LLAISYS.llaisysQwen2InitWeightArrays(self._model)
-        print("[Python] Weight arrays initialized")
 
         # Process each loaded weight
-        count = 0
         for name, tensor_data in self.weights_data.items():
-            count += 1
-            if count % 10 == 0 or count == len(self.weights_data):
-                print(f"[Python] Processing weight {count}/{len(self.weights_data)}: {name[:50]}...")
 
             weight_tensor = Tensor.from_numpy(tensor_data)
 
@@ -174,16 +163,11 @@ class Qwen2:
 
             # Handle common weights
             elif name == 'model.embed_tokens.weight':
-                print("[Python] Setting embed_tokens weight...")
                 LIB_LLAISYS.llaisysQwen2SetEmbedTokensWeight(self._model, weight_tensor.lib_tensor())
             elif name == 'model.norm.weight':
-                print("[Python] Setting out_norm weight...")
                 LIB_LLAISYS.llaisysQwen2SetOutNormWeight(self._model, weight_tensor.lib_tensor())
             elif name == 'lm_head.weight':
-                print("[Python] Setting out_embed weight...")
                 LIB_LLAISYS.llaisysQwen2SetOutEmbedWeight(self._model, weight_tensor.lib_tensor())
-
-        print("[Python] _load_weights_to_cpp completed")
 
     def generate(
         self,
@@ -195,34 +179,64 @@ class Qwen2:
     ):
         import ctypes
 
-        # Reset cache before starting a new generation
-        LIB_LLAISYS.llaisysQwen2ModelResetCache(self._model)
-
+        # Only reset cache if this is the beginning of a new generation sequence
+        # We detect this by checking if inputs contains more than one token
+        # For continuation (decode mode), inputs should contain only the last token
         input_tokens = list(inputs)
+        
+        # Reset cache only for new sequences (when we have multiple input tokens)
+        if len(input_tokens) > 1:
+            LIB_LLAISYS.llaisysQwen2ModelResetCache(self._model)
 
         output_tokens = []
-        for _ in range(max_new_tokens):
-            # Convert input_tokens to ctypes array
+
+        # Prefill phase: Process all input tokens at once
+        # Save the input tokens - they should be included in the final output
+        # because we need to return the complete sequence (input + generated tokens)
+        # to match PyTorch's behavior
+        input_tokens_copy = list(input_tokens)
+        if input_tokens:
             token_array = (ctypes.c_longlong * len(input_tokens))(*input_tokens)
-            
             next_token = LIB_LLAISYS.llaisysQwen2ModelInfer(
                 self._model,
                 token_array,
-                len(input_tokens)
+                len(input_tokens),
+                top_k,
+                top_p,
+                temperature
             )
+            if next_token == 151643:  # End token
+                return input_tokens_copy + []  # Return input tokens only
+            output_tokens.append(next_token)
+            last_token = next_token
 
-            if top_k == 1:
-                sampled_token = next_token
-            else:
-                sampled_token = next_token
+        # Decode phase: Generate one token at a time
+        # In decode mode, we only pass the last generated token
+        while len(output_tokens) < max_new_tokens:
+            # Pass only the last token for decode mode
+            # The C++ code will use token_ids[ntoken-1] which is the last token
+            token_array = (ctypes.c_longlong * 1)(*([last_token]))
 
-            if sampled_token == 151643:  # End token
+            next_token = LIB_LLAISYS.llaisysQwen2ModelInfer(
+                self._model,
+                token_array,
+                1,  # ntoken = 1 for decode mode
+                top_k,
+                top_p,
+                temperature
+            )
+            
+            
+            if next_token == 151643:  # End token
+                output_tokens.append(next_token)
                 break
+            
+            output_tokens.append(next_token)
+            last_token = next_token
 
-            output_tokens.append(sampled_token)
-            input_tokens.append(sampled_token)
-
-        return output_tokens
+        # Return input_tokens + generated_tokens to match PyTorch behavior
+        # PyTorch's generate() returns the complete sequence including input tokens
+        return input_tokens_copy + output_tokens
 
     def __del__(self):
         if hasattr(self, "_model") and self._model is not None:

@@ -92,7 +92,7 @@ void Qwen2ModelDestroy(struct Qwen2Model *model);
 
 struct Qwen2Weights *Qwen2ModelWeights(struct Qwen2Model *model);
 
-int64_t Qwen2ModelInfer(struct Qwen2Model *model, int64_t *token_ids, size_t ntoken);
+int64_t Qwen2ModelInfer(struct Qwen2Model *model, int64_t *token_ids, size_t ntoken, int top_k = 1, float top_p = 0.8, float temperature = 0.8);
 
 void Qwen2ModelResetCache(struct Qwen2Model *model);
 

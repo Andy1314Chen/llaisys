@@ -44,14 +44,24 @@ void self_attention_(T *out, const T *q, const T *k, const T *v,
                 float score = 0.0f;
                 for (size_t d = 0; d < head_dim; ++d) {
                     if constexpr (std::is_same_v<T, llaisys::fp16_t> || std::is_same_v<T, llaisys::bf16_t>) {
-                        score += static_cast<float>(llaisys::utils::cast<float>(q_vec[d]) * llaisys::utils::cast<float>(k_vec[d]));
+                        float q_val = static_cast<float>(llaisys::utils::cast<float>(q_vec[d]));
+                        float k_val = static_cast<float>(llaisys::utils::cast<float>(k_vec[d]));
+                        score += q_val * k_val;
                     } else {
-                        score += static_cast<float>(q_vec[d]) * static_cast<float>(k_vec[d]);
+                        float q_val = static_cast<float>(q_vec[d]);
+                        float k_val = static_cast<float>(k_vec[d]);
+                        score += q_val * k_val;
                     }
                 }
                 score *= scale;
+                
+                // Check for numerical stability
+                if (std::isnan(score) || std::isinf(score)) {
+                    score = -std::numeric_limits<float>::infinity();
+                }
+                
                 scores[j] = score;
-                if (score > max_score) {
+                if (score > max_score && !std::isnan(score) && !std::isinf(score)) {
                     max_score = score;
                 }
             }
@@ -63,6 +73,9 @@ void self_attention_(T *out, const T *q, const T *k, const T *v,
                     scores[j] = 0.0f;
                 } else {
                     float val = std::exp(scores[j] - max_score);
+                    if (std::isnan(val) || std::isinf(val)) {
+                        val = 0.0f;
+                    }
                     scores[j] = val;
                     sum_exp += val;
                 }
@@ -75,7 +88,7 @@ void self_attention_(T *out, const T *q, const T *k, const T *v,
 
             for (size_t j = 0; j < total_seq_len; ++j) {
                 float weight = scores[j] * inv_sum;
-                if (weight == 0.0f) {
+                if (weight == 0.0f || std::isnan(weight) || std::isinf(weight)) {
                     continue;
                 }
 
@@ -84,9 +97,15 @@ void self_attention_(T *out, const T *q, const T *k, const T *v,
 
                 for (size_t d = 0; d < head_dim_v; ++d) {
                     if constexpr (std::is_same_v<T, llaisys::fp16_t> || std::is_same_v<T, llaisys::bf16_t>) {
-                        out_accum[d] += weight * static_cast<float>(llaisys::utils::cast<float>(v_vec[d]));
+                        float v_val = static_cast<float>(llaisys::utils::cast<float>(v_vec[d]));
+                        if (!std::isnan(v_val) && !std::isinf(v_val)) {
+                            out_accum[d] += weight * v_val;
+                        }
                     } else {
-                        out_accum[d] += weight * static_cast<float>(v_vec[d]);
+                        float v_val = static_cast<float>(v_vec[d]);
+                        if (!std::isnan(v_val) && !std::isinf(v_val)) {
+                            out_accum[d] += weight * v_val;
+                        }
                     }
                 }
             }
@@ -94,10 +113,14 @@ void self_attention_(T *out, const T *q, const T *k, const T *v,
             // 4. Store Output: [seq_len, num_heads, head_dim_v]
             T *out_vec = out + (i * num_heads + h) * head_dim_v;
             for (size_t d = 0; d < head_dim_v; ++d) {
+                float val = out_accum[d];
+                if (std::isnan(val) || std::isinf(val)) {
+                    val = 0.0f;
+                }
                 if constexpr (std::is_same_v<T, llaisys::fp16_t> || std::is_same_v<T, llaisys::bf16_t>) {
-                    out_vec[d] = llaisys::utils::cast<T>(out_accum[d]);
+                    out_vec[d] = llaisys::utils::cast<T>(val);
                 } else {
-                    out_vec[d] = static_cast<T>(out_accum[d]);
+                    out_vec[d] = static_cast<T>(val);
                 }
             }
         }

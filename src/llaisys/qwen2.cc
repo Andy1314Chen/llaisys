@@ -117,7 +117,7 @@ __export void llaisysQwen2InitWeightArrays(struct LlaisysQwen2Model *model) {
         for (size_t i = 0; i < nlayer; ++i) {
             cpp_model->weights.mlp_down_w[i] = nullptr;
         }
-    } catch (const std::bad_alloc& e) {
+    } catch (const std::bad_alloc&) {
         // Clean up any partial allocations
         // For now, just return - in production code you'd want more sophisticated cleanup
         return;

@@ -1,6 +1,7 @@
 from typing import Sequence
 from ..libllaisys import LIB_LLAISYS, DeviceType
 from ..tensor import Tensor
+import ml_dtypes
 from pathlib import Path
 import ctypes
 import safetensors
@@ -25,7 +26,7 @@ class Qwen2:
                         # Since numpy doesn't have native bfloat16 support in some versions,
                         # we detect bfloat16 differently
                         if hasattr(tensor, 'dtype') and str(tensor.dtype) in ['bfloat16', '<V2'] or \
-                           (hasattr(np, 'bfloat16') and tensor.dtype == np.bfloat16):
+                           tensor.dtype == ml_dtypes.bfloat16:
                             # Convert to float32 for compatibility
                             tensor = tensor.astype(np.float32)
                         self.weights_data[name] = tensor
@@ -54,6 +55,7 @@ class Qwen2:
     def _parse_config(self, model_path):
         # Read configuration from config.json
         import json
+        from ..libllaisys import DataType
         config_path = model_path / "config.json"
         with open(config_path, "r") as f:
             config = json.load(f)
@@ -69,11 +71,20 @@ class Qwen2:
         self.intermediate_size = config["intermediate_size"]
         self.end_token = config.get("eos_token_id", 151643)
 
+        # Parse torch_dtype from config
+        torch_dtype_str = config.get("torch_dtype", "float32")
+        dtype_map = {
+            "float32": DataType.F32,
+            "float16": DataType.F32,
+            "bfloat16": DataType.F32
+        }
+        self.dtype = dtype_map.get(torch_dtype_str, DataType.F32)
+
     def _create_model(self):
         from ..libllaisys.models import LlaisysQwen2Meta  # Import the correct Qwen2Meta
 
         meta = LlaisysQwen2Meta()
-        meta.dtype = 13  # LLAISYS_DTYPE_F32 (assuming this is the correct value)
+        meta.dtype = self.dtype.value
         meta.nlayer = self.num_layers
         meta.hs = self.hidden_size
         meta.nh = self.num_heads
@@ -89,6 +100,9 @@ class Qwen2:
         meta.epsilon = self.rms_norm_eps
         meta.theta = self.rope_theta
         meta.end_token = self.end_token
+
+        # Save meta for later reference
+        self.meta = meta
 
         # IMPORTANT: Pass meta by reference (byref) since C API expects POINTER(LlaisysQwen2Meta)
         self._model = LIB_LLAISYS.llaisysQwen2ModelCreate(
@@ -205,7 +219,7 @@ class Qwen2:
                 top_p,
                 temperature
             )
-            if next_token == 151643:  # End token
+            if next_token == self.meta.end_token:  # End token
                 return input_tokens_copy + []  # Return input tokens only
             output_tokens.append(next_token)
             last_token = next_token
@@ -227,7 +241,7 @@ class Qwen2:
             )
             
             
-            if next_token == 151643:  # End token
+            if next_token == self.meta.end_token:  # End token
                 output_tokens.append(next_token)
                 break
             

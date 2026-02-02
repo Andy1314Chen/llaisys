@@ -4,15 +4,42 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstring>
+
+#ifdef _OPENMP
+#include <omp.h>
+#endif
 
 template <typename T>
 void linear_(T *out, const T *in, const T *weight, const T *bias,
              size_t batch_size, size_t in_features, size_t out_features) {
-    // Manual loop unrolling and optimizations for better performance
-    // Works on all CPU architectures without requiring SIMD intrinsics
 
-    if constexpr (std::is_same_v<T, llaisys::bf16_t> || std::is_same_v<T, llaisys::fp16_t>) {
-        // FP16/BF16: convert to float, compute, convert back
+    if constexpr (std::is_same_v<T, float>) {
+        // Float32 优化路径
+        // 策略：在 (batch, out_features) 维度并行，每个线程独立计算完整的点积
+
+        const size_t total_outputs = batch_size * out_features;
+
+#pragma omp parallel for schedule(static)
+        for (size_t idx = 0; idx < total_outputs; idx++) {
+            size_t b = idx / out_features;
+            size_t n = idx % out_features;
+
+            const float *__restrict in_row = in + b * in_features;
+            const float *__restrict w_row = weight + n * in_features;
+
+            float sum = bias ? bias[n] : 0.0f;
+
+// 内层循环：编译器自动向量化
+#pragma omp simd reduction(+ : sum)
+            for (size_t k = 0; k < in_features; k++) {
+                sum += in_row[k] * w_row[k];
+            }
+
+            out[b * out_features + n] = sum;
+        }
+    } else {
+        // FP16/BF16 路径：逐元素转换为 float 计算
         for (size_t i = 0; i < batch_size; i++) {
             const T *in_row = in + i * in_features;
             T *out_row = out + i * out_features;
@@ -21,61 +48,12 @@ void linear_(T *out, const T *in, const T *weight, const T *bias,
                 const T *w_row = weight + j * in_features;
                 float sum = bias ? llaisys::utils::cast<float>(bias[j]) : 0.0f;
 
-                // Manual loop unrolling for better instruction-level parallelism
-                size_t k = 0;
-                const float *in_row_f = reinterpret_cast<const float*>(in_row);
-                const float *w_row_f = reinterpret_cast<const float*>(w_row);
-
-                // Unroll by 8 for better performance
-                for (; k + 8 <= in_features; k += 8) {
-                    sum += in_row_f[k] * w_row_f[k] +
-                           in_row_f[k+1] * w_row_f[k+1] +
-                           in_row_f[k+2] * w_row_f[k+2] +
-                           in_row_f[k+3] * w_row_f[k+3] +
-                           in_row_f[k+4] * w_row_f[k+4] +
-                           in_row_f[k+5] * w_row_f[k+5] +
-                           in_row_f[k+6] * w_row_f[k+6] +
-                           in_row_f[k+7] * w_row_f[k+7];
-                }
-
-                // Handle remaining elements
-                for (; k < in_features; k++) {
-                    sum += in_row_f[k] * w_row_f[k];
+                for (size_t k = 0; k < in_features; k++) {
+                    sum += llaisys::utils::cast<float>(in_row[k])
+                         * llaisys::utils::cast<float>(w_row[k]);
                 }
 
                 out_row[j] = llaisys::utils::cast<T>(sum);
-            }
-        }
-    } else {
-        // Float32: direct computation with manual unrolling
-        for (size_t i = 0; i < batch_size; i++) {
-            const T *in_row = in + i * in_features;
-            T *out_row = out + i * out_features;
-
-            for (size_t j = 0; j < out_features; j++) {
-                const T *w_row = weight + j * in_features;
-                T sum = bias ? bias[j] : static_cast<T>(0);
-
-                size_t k = 0;
-
-                // Unroll by 8 for better instruction-level parallelism
-                for (; k + 8 <= in_features; k += 8) {
-                    sum += in_row[k] * w_row[k] +
-                           in_row[k+1] * w_row[k+1] +
-                           in_row[k+2] * w_row[k+2] +
-                           in_row[k+3] * w_row[k+3] +
-                           in_row[k+4] * w_row[k+4] +
-                           in_row[k+5] * w_row[k+5] +
-                           in_row[k+6] * w_row[k+6] +
-                           in_row[k+7] * w_row[k+7];
-                }
-
-                // Handle remaining elements
-                for (; k < in_features; k++) {
-                    sum += in_row[k] * w_row[k];
-                }
-
-                out_row[j] = sum;
             }
         }
     }

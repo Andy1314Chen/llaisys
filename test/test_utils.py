@@ -1,6 +1,9 @@
 import llaisys
 import torch
 
+# 固定随机种子，保证测试可复现
+torch.manual_seed(42)
+
 
 def random_tensor(
     shape, dtype_name, device_name, device_id=0, scale=None, bias=None

@@ -8,35 +8,35 @@ template <typename T>
 void rope_(T *out, const T *in, const int64_t *pos_id,
            const int64_t seq_len,
            const int64_t num_heads,
-           const int64_t head_dim, float theta = 10000.0f) {
-    std::vector<float> angles;
+           const int64_t head_dim, double theta = 10000.0) {
+    // 预计算 sin/cos，用 double 精度计算 angle 以匹配 PyTorch
+    std::vector<float> sin_cache(seq_len * head_dim / 2);
+    std::vector<float> cos_cache(seq_len * head_dim / 2);
+
     for (int64_t i = 0; i < seq_len; ++i) {
+        double pos = static_cast<double>(pos_id[i]);
         for (int64_t j = 0; j < head_dim / 2; ++j) {
-            if constexpr (std::is_same_v<T, llaisys::fp16_t> || std::is_same_v<T, llaisys::bf16_t>) {
-                float pos = llaisys::utils::cast<float>(pos_id[i]);
-                auto angle = pos / std::pow(theta, (2.0f * j) / head_dim);
-                angles.push_back(angle);
-            } else {
-                auto angle = static_cast<float>(pos_id[i]) / std::pow(theta, (2.0f * j) / head_dim);
-                angles.push_back(angle);
-            }
+            // 用 double 精度计算 angle，与 Python 的 ** 运算符行为一致
+            double angle = pos / std::pow(theta, (2.0 * j) / head_dim);
+            size_t idx = i * head_dim / 2 + j;
+            sin_cache[idx] = static_cast<float>(std::sin(angle));
+            cos_cache[idx] = static_cast<float>(std::cos(angle));
         }
     }
 
     for (int64_t i = 0; i < seq_len; ++i) {
         for (int64_t j = 0; j < num_heads; ++j) {
             for (int64_t k = 0; k < head_dim / 2; ++k) {
-                auto a = in[i * num_heads * head_dim + j * head_dim + k];
-                auto b = in[i * num_heads * head_dim + j * head_dim + k + head_dim / 2];
-                if constexpr (std::is_same_v<T, llaisys::fp16_t> || std::is_same_v<T, llaisys::bf16_t>) {
-                    float a_f = llaisys::utils::cast<float>(a);
-                    float b_f = llaisys::utils::cast<float>(b);
-                    out[i * num_heads * head_dim + j * head_dim + k] = llaisys::utils::cast<T>(a_f * std::cos(angles[i * head_dim / 2 + k]) - b_f * std::sin(angles[i * head_dim / 2 + k]));
-                    out[i * num_heads * head_dim + j * head_dim + k + head_dim / 2] = llaisys::utils::cast<T>(b_f * std::cos(angles[i * head_dim / 2 + k]) + a_f * std::sin(angles[i * head_dim / 2 + k]));
-                } else {
-                    out[i * num_heads * head_dim + j * head_dim + k] = a * std::cos(angles[i * head_dim / 2 + k]) - b * std::sin(angles[i * head_dim / 2 + k]);
-                    out[i * num_heads * head_dim + j * head_dim + k + head_dim / 2] = b * std::cos(angles[i * head_dim / 2 + k]) + a * std::sin(angles[i * head_dim / 2 + k]);
-                }
+                size_t base = i * num_heads * head_dim + j * head_dim;
+                size_t cache_idx = i * head_dim / 2 + k;
+
+                float a = llaisys::utils::cast<float>(in[base + k]);
+                float b = llaisys::utils::cast<float>(in[base + k + head_dim / 2]);
+                float s = sin_cache[cache_idx];
+                float c = cos_cache[cache_idx];
+
+                out[base + k] = llaisys::utils::cast<T>(a * c - b * s);
+                out[base + k + head_dim / 2] = llaisys::utils::cast<T>(b * c + a * s);
             }
         }
     }

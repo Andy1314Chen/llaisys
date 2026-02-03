@@ -18,25 +18,26 @@ void linear_(T *out, const T *in, const T *weight, const T *bias,
         // Float32 优化路径
         // 策略：在 (batch, out_features) 维度并行，每个线程独立计算完整的点积
 
-        const size_t total_outputs = batch_size * out_features;
+        const ptrdiff_t total_outputs = static_cast<ptrdiff_t>(batch_size * out_features);
+        const ptrdiff_t in_feat = static_cast<ptrdiff_t>(in_features);
+        const ptrdiff_t out_feat = static_cast<ptrdiff_t>(out_features);
 
 #pragma omp parallel for schedule(static)
-        for (size_t idx = 0; idx < total_outputs; idx++) {
-            size_t b = idx / out_features;
-            size_t n = idx % out_features;
+        for (ptrdiff_t idx = 0; idx < total_outputs; idx++) {
+            ptrdiff_t b = idx / out_feat;
+            ptrdiff_t n = idx % out_feat;
 
-            const float *__restrict in_row = in + b * in_features;
-            const float *__restrict w_row = weight + n * in_features;
+            const float *__restrict in_row = in + b * in_feat;
+            const float *__restrict w_row = weight + n * in_feat;
 
             float sum = bias ? bias[n] : 0.0f;
 
-// 内层循环：编译器自动向量化
-#pragma omp simd reduction(+ : sum)
-            for (size_t k = 0; k < in_features; k++) {
+            // 内层循环：编译器自动向量化（移除 omp simd 以兼容 MSVC）
+            for (ptrdiff_t k = 0; k < in_feat; k++) {
                 sum += in_row[k] * w_row[k];
             }
 
-            out[b * out_features + n] = sum;
+            out[b * out_feat + n] = sum;
         }
     } else {
         // FP16/BF16 路径：逐元素转换为 float 计算

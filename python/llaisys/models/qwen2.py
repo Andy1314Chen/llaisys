@@ -1,7 +1,6 @@
 from typing import Sequence
 from ..libllaisys import LIB_LLAISYS, DeviceType
 from ..tensor import Tensor
-import ml_dtypes
 from pathlib import Path
 import ctypes
 import safetensors
@@ -25,8 +24,9 @@ class Qwen2:
                         # Convert bfloat16 to float32 if needed
                         # Since numpy doesn't have native bfloat16 support in some versions,
                         # we detect bfloat16 differently
-                        if hasattr(tensor, 'dtype') and str(tensor.dtype) in ['bfloat16', '<V2'] or \
-                           tensor.dtype == ml_dtypes.bfloat16:
+                        # Detect bfloat16 by string representation (works without ml_dtypes)
+                        dtype_str = str(tensor.dtype).lower()
+                        if 'bfloat16' in dtype_str or dtype_str == '<v2':
                             # Convert to float32 for compatibility
                             tensor = tensor.astype(np.float32)
                         self.weights_data[name] = tensor
